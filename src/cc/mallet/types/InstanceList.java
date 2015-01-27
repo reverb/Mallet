@@ -456,587 +456,601 @@ public class InstanceList extends ArrayList<Instance> implements Serializable, I
 //			System.out.println(i + ": " +  index +": " + inst.getTarget().toString()
 //			+ " : " + targets.lookupLabel(randIndex) );
 
-            String oldTargetStr = inst.getTarget().toString();
-            String newTargetStr = targets.lookupLabel(randIndex).toString();
-
-            if(!oldTargetStr.equals(newTargetStr)){
-                inst.unLock();
-                inst.setTarget(targets.lookupLabel(randIndex));
-                inst.lock();
-
-                realRandNum ++;
-            }
-            //			System.out.println(i + ": " +  index +": " + inst.getTarget().toString()
-            //                                              + " : " + targets.lookupObject(randIndex) );
-            setInstance(index, inst);
-        }
-
-
-        double realRatio = (double)realRandNum/instance_size;
-
-        return realRatio;
-    }
-
-    public InstanceList cloneEmpty () {
-        return cloneEmptyInto (new InstanceList (pipe));
-    }
-
-    // A precursor to cloning subclasses of InstanceList
-    protected InstanceList cloneEmptyInto (InstanceList ret)
-    {
-        ret.instWeights = null; // Don't copy these, because its empty! instWeights == null ? null : (HashMap<Instance,Double>) instWeights.clone();
-        // xxx Should the featureSelection and perLabel... be cloned?
-        // Note that RoostingTrainer currently depends on not cloning its splitting.
-        ret.featureSelection = this.featureSelection;
-        ret.perLabelFeatureSelection = this.perLabelFeatureSelection;
-        ret.dataClass = this.dataClass;
-        ret.targetClass = this.targetClass;
-        ret.dataAlphabet = this.dataAlphabet;
-        ret.targetAlphabet = this.targetAlphabet;
-        return ret;
-    }
-
-    public void shuffle (java.util.Random r) {
-        Collections.shuffle (this, r);
-    }
-
-    /**
-     * Shuffles the elements of this list among several smaller lists.
-     * @param proportions A list of numbers (not necessarily summing to 1) which,
-     * when normalized, correspond to the proportion of elements in each returned
-     * sublist.  This method (and all the split methods) do not transfer the Instance
-     * weights to the resulting InstanceLists.
-     * @param r The source of randomness to use in shuffling.
-     * @return one <code>InstanceList</code> for each element of <code>proportions</code>
-     */
-    public InstanceList[] split (java.util.Random r, double[] proportions) {
-        InstanceList shuffled = this.shallowClone();
-        shuffled.shuffle (r);
-        return shuffled.splitInOrder(proportions);
-    }
-
-    public InstanceList[] split (double[] proportions) {
-        return split (new java.util.Random(System.currentTimeMillis()), proportions);
-    }
-
-    /** Chops this list into several sequential sublists.
-     * @param proportions A list of numbers corresponding to the proportion of
-     * elements in each returned sublist.  If not already normalized to sum to 1.0, it will be normalized here.
-     * @return one <code>InstanceList</code> for each element of <code>proportions</code>
-     */
-    public InstanceList[] splitInOrder (double[] proportions) {
-        InstanceList[] ret = new InstanceList[proportions.length];
-        double maxind[] = proportions.clone();
-        MatrixOps.normalize(maxind);
-        for (int i = 0; i < maxind.length; i++) {
-            ret[i] = this.cloneEmpty();  // Note that we are passing on featureSelection here.
-            if (i > 0)
-                maxind[i] += maxind[i-1];
-        }
-        for (int i = 0; i < maxind.length; i++) {
-            // Fill maxind[] with the highest instance index to go in each corresponding returned InstanceList
-            maxind[i] = Math.rint (maxind[i] * this.size());
-        }
-        for (int i = 0, j = 0; i < size(); i++) {
-            // This gives a slight bias toward putting an extra instance in the last InstanceList.
-            while (i >= maxind[j] && j < ret.length)
-                j++;
-            ret[j].add(this.get(i));
-        }
-        return ret;
-    }
-
-
-    public InstanceList[] splitInOrder (int[] counts) {
-        InstanceList[] ret = new InstanceList[counts.length];
-        // Will leave ununsed instances if sum of counts[] != this.size()!
-        int idx = 0;
-        for (int num = 0; num < counts.length; num++){
-            ret[num] = cloneEmpty();
-            for (int i = 0; i < counts[num]; i++){
-                ret[num].add (get(idx));  // Transfer weights?
-                idx++;
-            }
-        }
-
-        return ret;
-    }
-
-
-    /** Returns a pair of new lists such that the first list in the pair contains
-     * every <code>m</code>th element of this list, starting with the first.
-     * The second list contains all remaining elements.
-     */
-    public InstanceList[] splitInTwoByModulo (int m)
-    {
-        InstanceList[] ret = new InstanceList[2];
-        ret[0] = this.cloneEmpty();
-        ret[1] = this.cloneEmpty();
-        for (int i = 0; i < this.size(); i++) {
-            if (i % m == 0)
-                ret[0].add (this.get(i));
-            else
-                ret[1].add (this.get(i));
-        }
-        return ret;
-    }
-
-    public InstanceList sampleWithReplacement (java.util.Random r, int numSamples)
-    {
-        InstanceList ret = this.cloneEmpty();
-        for (int i = 0; i < numSamples; i++)
-            ret.add (this.get(r.nextInt(this.size())));
-        return ret;
-    }
-
-    /**
-     * Returns an <code>InstanceList</code> of the same size, where the instances come from the
-     * random sampling (with replacement) of this list using the instance weights.
-     * The new instances all have their weights set to one.
-     */
-    // added by Gary - ghuang@cs.umass.edu
-    @Deprecated
-    // Move to InstanceListUtils
-    public InstanceList sampleWithInstanceWeights(java.util.Random r)
-    {
-        double[] weights = new double[size()];
-        for (int i = 0; i < weights.length; i++)
-            weights[i] = getInstanceWeight(i);
-
-        return sampleWithWeights(r, weights);
-    }
-
-    /**
-     * Returns an <code>InstanceList</code> of the same size, where the instances come from the
-     * random sampling (with replacement) of this list using the given weights.
-     * The length of the weight array must be the same as the length of this list
-     * The new instances all have their weights set to one.
-     */
-    // added by Gary - ghuang@cs.umass.edu
-    public InstanceList sampleWithWeights (java.util.Random r, double[] weights)
-    {
-        if (weights.length != size())
-            throw new IllegalArgumentException("length of weight vector must equal number of instances");
-        if (size() == 0)
-            return cloneEmpty();
-
-        double sumOfWeights = 0;
-        for (int i = 0; i < size(); i++) {
-            if (weights[i] < 0)
-                throw new IllegalArgumentException("weight vector must be non-negative");
-            sumOfWeights += weights[i];
-        }
-        if (sumOfWeights <= 0)
-            throw new IllegalArgumentException("weights must sum to positive value");
-
-        InstanceList newList = new InstanceList(getPipe(), size());
-        double[] probabilities = new double[size()];
-        double sumProbs = 0;
-        for (int i = 0; i < size(); i++) {
-            sumProbs += r.nextDouble();
-            probabilities[i] = sumProbs;
-        }
-        MatrixOps.timesEquals(probabilities, sumOfWeights / sumProbs);
-
-        // make sure rounding didn't mess things up
-        probabilities[size() - 1] = sumOfWeights;
-        // do sampling
-        int a = 0; int b = 0; sumProbs = 0;
-        while (a < size() && b < size()) {
-            sumProbs += weights[b];
-
-            while (a < size() && probabilities[a] <= sumProbs) {
-                newList.add(get(b));
-                newList.setInstanceWeight(a, 1);
-                a++;
-            }
-            b++;
-        }
-
-        return newList;
-    }
-
-    /** Returns the Java Class 'data' field of Instances in this list. */
-    public Class getDataClass () {
-        return dataClass;
-    }
-
-    /** Returns the Java Class 'target' field of Instances in this list. */
-    public Class getTargetClass () {
-        return targetClass;
-    }
-
-    //added by Fuchun
-    /** Replaces the <code>Instance</code> at position <code>index</code>
-     * with a new one. */
-    public void setInstance (int index, Instance instance)
-    {
-        assert (this.getDataAlphabet().equals(instance.getDataAlphabet()));
-        assert (this.getTargetAlphabet().equals(instance.getTargetAlphabet()));
-        this.set(index, instance);
-    }
-
-    public double getInstanceWeight (Instance instance) {
-        if (instWeights != null) {
-            Double value = instWeights.get(instance);
-            if (value != null) {
-                return value;
-            }
-        }
-        return 1.0;
-    }
-
-    public double getInstanceWeight (int index) {
-        if (index > this.size()) {
-            throw new IllegalArgumentException("Index out of bounds: index="+index+" size="+this.size());
-        }
-
-        if (instWeights != null) {
-            Double value = instWeights.get(get(index));
-            if (value != null) {
-                return value;
-            }
-        }
-
-        return 1.0;
-    }
-
-    public void setInstanceWeight (int index, double weight) {
-        setInstanceWeight(get(index), weight);
-    }
-
-    public void setInstanceWeight (Instance instance, double weight) {
-
-        // Weights of 1.0 are not explicitly stored in the hash.
-        if (weight == 1.0) {
-            // If the weights hash does not exist, we are done.
-            if (instWeights == null) { return; }
-
-            // Otherwise, see if there is a weight currently set.
-            Double value = instWeights.get(instance);
-
-            // If there is no value set or the value is 1.0, we're done.
-            if (value == null || value.doubleValue() == weight) { return; }
-
-            // Otherwise remove the value
-            instWeights.remove(instance);
-        }
-        else {
-            // Initialize the weights hash if it does not exist
-            if (instWeights == null) {
-                instWeights = new HashMap<Instance,Double> ();
-            }
-            // Add the new value, overriding any previous value
-            instWeights.put(instance, weight);
-        }
-    }
-
-    public void setFeatureSelection (FeatureSelection selectedFeatures)
-    {
-        if (selectedFeatures != null
-                && selectedFeatures.getAlphabet() != null  // xxx We allow a null vocabulary here?  See CRF3.java
-                && selectedFeatures.getAlphabet() != getDataAlphabet())
-            throw new IllegalArgumentException ("Vocabularies do not match");
-        featureSelection = selectedFeatures;
-    }
-
-    public FeatureSelection getFeatureSelection ()
-    {
-        return featureSelection;
-    }
-
-    public void setPerLabelFeatureSelection (FeatureSelection[] selectedFeatures)
-    {
-        if (selectedFeatures != null) {
-            for (int i = 0; i < selectedFeatures.length; i++)
-                if (selectedFeatures[i].getAlphabet() != getDataAlphabet())
-                    throw new IllegalArgumentException ("Vocabularies do not match");
-        }
-        perLabelFeatureSelection = selectedFeatures;
-    }
-
-    public FeatureSelection[] getPerLabelFeatureSelection ()
-    {
-        return perLabelFeatureSelection;
-    }
-
-    /** Sets the "target" field to <code>null</code> in all instances.  This makes unlabeled data. */
-    public void removeTargets()
-    {
-        for (Instance instance : this)
-            instance.setTarget (null);
-    }
-
-    /** Sets the "source" field to <code>null</code> in all instances.  This will often save memory when
-     the raw data had been placed in that field. */
-    public void removeSources()
-    {
-        for (int i = 0; i < this.size(); i++)
-            get(i).clearSource();
-    }
-
-    /** Constructs a new <code>InstanceList</code>, deserialized from <code>file</code>.  If the
-     string value of <code>file</code> is "-", then deserialize from {@link System.in}. */
-    public static InstanceList load (File file)
-    {
-        try {
-            ObjectInputStream ois;
-            if (file.toString().equals("-"))
-                ois = new ObjectInputStream (System.in);
-            else
-                ois = new ObjectInputStream (new BufferedInputStream(new FileInputStream (file)));
-
-            InstanceList ilist = (InstanceList) ois.readObject();
-            ois.close();
-            return ilist;
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new IllegalArgumentException ("Couldn't read InstanceList from file "+file);
-        }
-    }
-
-    /** Saves this <code>InstanceList</code> to <code>file</code>.
-     If the string value of <code>file</code> is "-", then
-     serialize to {@link System.out}. */
-    public void save (File file)
-    {
-        try {
-            ObjectOutputStream ois;
-            if (file.toString().equals("-"))
-                ois = new ObjectOutputStream (System.out);
-            else
-                ois = new ObjectOutputStream (new FileOutputStream (file));
-            ois.writeObject(this);
-            ois.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new IllegalArgumentException ("Couldn't save InstanceList to file "+file);
-        }
-    }
-
-    // Serialization of InstanceList
-
-    private static final long serialVersionUID = 1;
-    private static final int CURRENT_SERIAL_VERSION = 1;
-
-    private void writeObject (ObjectOutputStream out) throws IOException {
-        int i, size;
-        out.writeInt (CURRENT_SERIAL_VERSION);
-        out.writeObject(instWeights);
-        out.writeObject(pipe);
-    }
-
-    private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
-        int i, size;
-        int version = in.readInt ();
-        instWeights = (HashMap<Instance,Double>) in.readObject();
-        pipe = (Pipe) in.readObject();
-    }
-
-    // added - culotta@cs.umass.edu
-    /**
-     <code>CrossValidationIterator</code> allows iterating over pairs of
-     <code>InstanceList</code>, where each pair is split into training/testing
-     based on nfolds.
-     */
-    public class CrossValidationIterator implements java.util.Iterator<InstanceList[]>, Serializable
-    {
-        int nfolds;
-        InstanceList[] folds;
-        int index;
-
-        /**
-         @param _nfolds number of folds to split InstanceList into
-         @param seed seed for random number used to split InstanceList
-         */
-        public CrossValidationIterator (int _nfolds, int seed)
-        {
-            assert (_nfolds > 0) : "nfolds: " + nfolds;
-            this.nfolds = _nfolds;
-            this.index = 0;
-            folds = new InstanceList[_nfolds];
-            double fraction = (double) 1 / _nfolds;
-            double[] proportions = new double[_nfolds];
-            for (int i=0; i < _nfolds; i++)
-                proportions[i] = fraction;
-            folds = split (new java.util.Random (seed), proportions);
-
-        }
-
-        public CrossValidationIterator (int _nfolds) {
-            this (_nfolds, 1);
-        }
-
-        public boolean hasNext () { return index < nfolds; }
-
-        /**
-         * Returns the next training/testing split.
-         * @return A pair of lists, where <code>InstanceList[0]</code> is the larger split (training)
-         *         and <code>InstanceList[1]</code> is the smaller split (testing)
-         */
-        public InstanceList[] nextSplit () {
-            InstanceList[] ret = new InstanceList[2];
-            ret[0] = new InstanceList (pipe);
-            for (int i=0; i < folds.length; i++) {
-                if (i==index)
-                    continue;
-                Iterator<Instance> iter = folds[i].iterator();
-                while (iter.hasNext())
-                    ret[0].add (iter.next());
-            }
-            ret[1] = folds[index].shallowClone();
-            index++;
-            return ret;
-        }
-
-        /** Returns the next split, given the number of folds you want in
-         *   the training data.  */
-        public InstanceList[] nextSplit (int numTrainFolds) {
-            InstanceList[] ret = new InstanceList[2];
-            ret[0] = new InstanceList (pipe);
-            ret[1] = new InstanceList (pipe);
-
-            // train on folds [index, index+numTrainFolds), test on rest
-            for (int i = 0; i < folds.length; i++) {
-                int foldno = (index + i) % folds.length;
-                InstanceList addTo;
-                if (i < numTrainFolds) {
-                    addTo = ret[0];
-                } else {
-                    addTo = ret[1];
-                }
-
-                Iterator<Instance> iter = folds[foldno].iterator();
-                while (iter.hasNext())
-                    addTo.add (iter.next());
-            }
-            index++;
-            return ret;
-        }
-
-        public InstanceList[] next () { return nextSplit(); }
-        public void remove () { throw new UnsupportedOperationException(); }
-    }
-
-
-    /** Returns the pipe through which each added <code>Instance</code> is passed,
-     * which may be <code>null</code>. */
-    public Pipe getPipe ()
-    {
-        return pipe;
-    }
-
-    /** Change the default Pipe associated with InstanceList.
-     * This method is very dangerous and should only be used in extreme circumstances!! */
-    public void setPipe(Pipe p) {
-        assert (Alphabet.alphabetsMatch(this, p));
-        pipe = p;
-    }
-
-
-    /** Returns the <code>Alphabet</code> mapping features of the data to
-     * integers. */
-    public Alphabet getDataAlphabet ()
-    {
-        if (dataAlphabet == null && pipe != null) {
-            dataAlphabet = pipe.getDataAlphabet ();
-        }
-        assert (pipe == null
-                || pipe.getDataAlphabet () == null
-                || pipe.getDataAlphabet () == dataAlphabet);
-        return dataAlphabet;
-    }
-
-    /** Returns the <code>Alphabet</code> mapping target output labels to
-     * integers. */
-    public Alphabet getTargetAlphabet ()
-    {
-        if (targetAlphabet == null && pipe != null) {
-            targetAlphabet = pipe.getTargetAlphabet ();
-        }
-        assert (pipe == null
-                || pipe.getTargetAlphabet () == null
-                || pipe.getTargetAlphabet () == targetAlphabet);
-        return targetAlphabet;
-    }
-
-    public Alphabet getAlphabet () {
-        return getDataAlphabet();
-    }
-
-    public Alphabet[] getAlphabets () {
-        return new Alphabet[] {getDataAlphabet(), getTargetAlphabet() };
-    }
-
-    public LabelVector targetLabelDistribution ()
-    {
-        if (this.size() == 0) return null;
-        if (!(get(0).getTarget() instanceof Labeling))
-            throw new IllegalStateException ("Target is not a labeling.");
-        double[] counts = new double[getTargetAlphabet().size()];
-        for (int i = 0; i < this.size(); i++) {
-            Instance instance =  get(i);
-            Labeling l = (Labeling) instance.getTarget();
-            l.addTo (counts, getInstanceWeight(i));
-        }
-        return new LabelVector ((LabelAlphabet)getTargetAlphabet(), counts);
-    }
-
-
-    public CrossValidationIterator crossValidationIterator (int nfolds, int seed)
-    {
-        return new CrossValidationIterator(nfolds, seed);
-    }
-
-    public CrossValidationIterator crossValidationIterator (int nfolds)
-    {
-        return new CrossValidationIterator(nfolds);
-    }
-
-    public static final String TARGET_PROPERTY = "target";
-
-    // I'm not sure these methods best belong here. On the other hand it is easy to find and centrally located here. -AKM Jan 2006
-    public void hideSomeLabels (double proportionToHide, Randoms r)
-    {
-        for (int i = 0; i < this.size(); i++) {
-            if (r.nextBoolean(proportionToHide)) {
-                Instance instance = this.get(i);
-                instance.unLock();
-                if (instance.getProperty(TARGET_PROPERTY) != instance.getTarget())
-                    instance.setProperty(TARGET_PROPERTY, instance.getTarget());
-                instance.setTarget (null);
-                instance.lock();
-            }
-        }
-    }
-
-    public void hideSomeLabels (BitSet bs)
-    {
-        for (int i = 0; i < this.size(); i++) {
-            if (bs.get(i)) {
-                Instance instance = this.get(i);
-                instance.unLock();
-                if (instance.getProperty(TARGET_PROPERTY) != instance.getTarget())
-                    instance.setProperty(TARGET_PROPERTY, instance.getTarget());
-                instance.setTarget (null);
-                instance.lock();
-            }
-        }
-    }
-
-    public void unhideAllLabels ()
-    {
-        for (int i = 0; i < this.size(); i++) {
-            Instance instance = this.get(i);
-            Object t;
-            if (instance.getTarget() == null && (t=instance.getProperty(TARGET_PROPERTY)) != null) {
-                instance.unLock();
-                instance.setTarget(t);
-                instance.lock();
-            }
-        }
-    }
-
-
+			String oldTargetStr = inst.getTarget().toString();
+			String newTargetStr = targets.lookupLabel(randIndex).toString();
+
+			if(!oldTargetStr.equals(newTargetStr)){
+				inst.unLock();	
+				inst.setTarget(targets.lookupLabel(randIndex));
+				inst.lock();
+
+				realRandNum ++;
+			}
+			//			System.out.println(i + ": " +  index +": " + inst.getTarget().toString() 
+			//                                              + " : " + targets.lookupObject(randIndex) );
+			setInstance(index, inst);
+		}
+
+
+		double realRatio = (double)realRandNum/instance_size;
+
+		return realRatio;
+	}
+	
+	public InstanceList cloneEmpty () {
+		return cloneEmptyInto (new InstanceList (pipe));
+	}
+
+	// A precursor to cloning subclasses of InstanceList 
+	protected InstanceList cloneEmptyInto (InstanceList ret)
+	{
+		ret.instWeights = null; // Don't copy these, because its empty! instWeights == null ? null : (HashMap<Instance,Double>) instWeights.clone();
+		// xxx Should the featureSelection and perLabel... be cloned?
+		// Note that RoostingTrainer currently depends on not cloning its splitting.
+		ret.featureSelection = this.featureSelection;
+		ret.perLabelFeatureSelection = this.perLabelFeatureSelection;
+		ret.dataClass = this.dataClass;
+		ret.targetClass = this.targetClass;
+		ret.dataAlphabet = this.dataAlphabet;
+		ret.targetAlphabet = this.targetAlphabet;
+		return ret;
+	}
+
+	public void shuffle (java.util.Random r) {
+		Collections.shuffle (this, r);
+	}
+
+	/**
+	 * Shuffles the elements of this list among several smaller lists.
+	 * @param proportions A list of numbers (not necessarily summing to 1) which,
+	 * when normalized, correspond to the proportion of elements in each returned
+	 * sublist.  This method (and all the split methods) do not transfer the Instance
+	 * weights to the resulting InstanceLists.
+	 * @param r The source of randomness to use in shuffling.
+	 * @return one <code>InstanceList</code> for each element of <code>proportions</code>
+	 */
+	public InstanceList[] split (java.util.Random r, double[] proportions) {
+		InstanceList shuffled = this.shallowClone();
+		shuffled.shuffle (r);
+		return shuffled.splitInOrder(proportions);
+	}
+	
+	public InstanceList[] split (double[] proportions) {
+		return split (new java.util.Random(System.currentTimeMillis()), proportions);
+	}
+
+	/** Chops this list into several sequential sublists.
+	 * @param proportions A list of numbers corresponding to the proportion of
+	 * elements in each returned sublist.  If not already normalized to sum to 1.0, it will be normalized here.
+	 * @return one <code>InstanceList</code> for each element of <code>proportions</code>
+	 */
+public InstanceList[] splitInOrder (double[] proportions) {
+		InstanceList[] ret = new InstanceList[proportions.length];
+		double maxind[] = proportions.clone();
+		MatrixOps.normalize(maxind);
+		for (int i = 0; i < maxind.length; i++) {
+			ret[i] = this.cloneEmpty();  // Note that we are passing on featureSelection here.
+			if (i > 0) 
+				maxind[i] += maxind[i-1];
+		}
+		for (int i = 0; i < maxind.length; i++) { 
+			// Fill maxind[] with the highest instance index to go in each corresponding returned InstanceList
+			maxind[i] = Math.rint (maxind[i] * this.size());
+		}
+		for (int i = 0, j = 0; i < size(); i++) {
+			// This gives a slight bias toward putting an extra instance in the last InstanceList.
+			while (i >= maxind[j] && j < ret.length) 
+				j++;
+			ret[j].add(this.get(i));
+		}
+		return ret;
+	}
+	
+
+	public InstanceList[] splitInOrder (int[] counts) {
+		InstanceList[] ret = new InstanceList[counts.length];
+		// Will leave ununsed instances if sum of counts[] != this.size()!
+		int idx = 0;
+		for (int num = 0; num < counts.length; num++){
+			ret[num] = cloneEmpty();
+			for (int i = 0; i < counts[num]; i++){
+				ret[num].add (get(idx));  // Transfer weights?
+				idx++;
+			}
+		}
+
+		return ret;
+	}
+
+
+	/** Returns a pair of new lists such that the first list in the pair contains
+	 * every <code>m</code>th element of this list, starting with the first.
+	 * The second list contains all remaining elements.
+	 */
+	public InstanceList[] splitInTwoByModulo (int m)
+	{
+		InstanceList[] ret = new InstanceList[2];
+		ret[0] = this.cloneEmpty();
+		ret[1] = this.cloneEmpty();
+		for (int i = 0; i < this.size(); i++) {
+			if (i % m == 0)
+				ret[0].add (this.get(i));
+			else
+				ret[1].add (this.get(i));
+		}
+		return ret;
+	}
+
+	public InstanceList sampleWithReplacement (java.util.Random r, int numSamples)
+	{
+		InstanceList ret = this.cloneEmpty();
+		for (int i = 0; i < numSamples; i++)
+			ret.add (this.get(r.nextInt(this.size())));
+		return ret;
+	}
+
+	/**
+	 * Returns an <code>InstanceList</code> of the same size, where the instances come from the
+	 * random sampling (with replacement) of this list using the instance weights.
+	 * The new instances all have their weights set to one.
+	 */
+	// added by Gary - ghuang@cs.umass.edu
+	@Deprecated
+	// Move to InstanceListUtils
+	public InstanceList sampleWithInstanceWeights(java.util.Random r) 
+	{
+		double[] weights = new double[size()];
+		for (int i = 0; i < weights.length; i++)
+			weights[i] = getInstanceWeight(i);
+
+		return sampleWithWeights(r, weights);
+	}
+
+	/**
+	 * Returns an <code>InstanceList</code> of the same size, where the instances come from the
+	 * random sampling (with replacement) of this list using the given weights.
+	 * The length of the weight array must be the same as the length of this list
+	 * The new instances all have their weights set to one.
+	 */
+	// added by Gary - ghuang@cs.umass.edu
+	public InstanceList sampleWithWeights (java.util.Random r, double[] weights) 
+	{
+		if (weights.length != size())
+			throw new IllegalArgumentException("length of weight vector must equal number of instances");
+		if (size() == 0)
+			return cloneEmpty();
+
+		double sumOfWeights = 0;
+		for (int i = 0; i < size(); i++) {
+			if (weights[i] < 0)
+				throw new IllegalArgumentException("weight vector must be non-negative");
+			sumOfWeights += weights[i];
+		}
+		if (sumOfWeights <= 0)
+			throw new IllegalArgumentException("weights must sum to positive value");
+
+		InstanceList newList = new InstanceList(getPipe(), size());
+		double[] probabilities = new double[size()];
+		double sumProbs = 0;
+		for (int i = 0; i < size(); i++) {
+			sumProbs += r.nextDouble();
+			probabilities[i] = sumProbs;
+		}
+		MatrixOps.timesEquals(probabilities, sumOfWeights / sumProbs);
+
+		// make sure rounding didn't mess things up
+		probabilities[size() - 1] = sumOfWeights;
+		// do sampling
+		int a = 0; int b = 0; sumProbs = 0;
+		while (a < size() && b < size()) {
+			sumProbs += weights[b];
+
+			while (a < size() && probabilities[a] <= sumProbs) {
+				newList.add(get(b));
+				newList.setInstanceWeight(a, 1);
+				a++;
+			}
+			b++;
+		}
+
+		return newList;
+	}
+
+	/** Returns the Java Class 'data' field of Instances in this list. */
+	public Class getDataClass () {
+		return dataClass;
+	}
+
+	/** Returns the Java Class 'target' field of Instances in this list. */
+	public Class getTargetClass () {
+		return targetClass;
+	}
+
+	//added by Fuchun
+	/** Replaces the <code>Instance</code> at position <code>index</code>
+	 * with a new one. */
+	public void setInstance (int index, Instance instance)
+	{
+		assert (this.getDataAlphabet().equals(instance.getDataAlphabet()));
+		assert (this.getTargetAlphabet().equals(instance.getTargetAlphabet()));
+		this.set(index, instance);
+	}
+
+	public double getInstanceWeight (Instance instance) {
+		if (instWeights != null) {
+			Double value = instWeights.get(instance);
+			if (value != null) {
+				return value;
+			}
+		}
+		return 1.0;
+	}
+
+	public double getInstanceWeight (int index) {
+		if (index > this.size()) {
+			throw new IllegalArgumentException("Index out of bounds: index="+index+" size="+this.size());
+		}
+
+		if (instWeights != null) {
+			Double value = instWeights.get(get(index));
+			if (value != null) {
+				return value;
+			}
+		}
+
+		return 1.0;
+	}
+
+	public void setInstanceWeight (int index, double weight) {
+		setInstanceWeight(get(index), weight);
+	}
+
+	public void setInstanceWeight (Instance instance, double weight) {
+
+		// Weights of 1.0 are not explicitly stored in the hash.
+		if (weight == 1.0) {
+			// If the weights hash does not exist, we are done.
+			if (instWeights == null) { return; }
+
+			// Otherwise, see if there is a weight currently set.
+			Double value = instWeights.get(instance);
+
+			// If there is no value set or the value is 1.0, we're done.
+			if (value == null || value.doubleValue() == weight) { return; }
+
+			// Otherwise remove the value
+			instWeights.remove(instance);
+		}
+		else {
+			// Initialize the weights hash if it does not exist
+			if (instWeights == null) {
+				instWeights = new HashMap<Instance,Double> ();
+			}
+			// Add the new value, overriding any previous value
+			instWeights.put(instance, weight);
+		}
+	}
+
+	public void setFeatureSelection (FeatureSelection selectedFeatures)
+	{
+		if (selectedFeatures != null
+				&& selectedFeatures.getAlphabet() != null  // xxx We allow a null vocabulary here?  See CRF3.java
+				&& selectedFeatures.getAlphabet() != getDataAlphabet())
+			throw new IllegalArgumentException ("Vocabularies do not match");
+		featureSelection = selectedFeatures;
+	}
+
+	public FeatureSelection getFeatureSelection ()
+	{
+		return featureSelection;
+	}
+
+	public void setPerLabelFeatureSelection (FeatureSelection[] selectedFeatures)
+	{
+		if (selectedFeatures != null) {
+			for (int i = 0; i < selectedFeatures.length; i++)
+				if (selectedFeatures[i].getAlphabet() != getDataAlphabet())
+					throw new IllegalArgumentException ("Vocabularies do not match");
+		}
+		perLabelFeatureSelection = selectedFeatures;
+	}
+
+	public FeatureSelection[] getPerLabelFeatureSelection ()
+	{
+		return perLabelFeatureSelection;
+	}
+
+	/** Sets the "target" field to <code>null</code> in all instances.  This makes unlabeled data. */
+	public void removeTargets()
+	{
+		for (Instance instance : this)
+			instance.setTarget (null);
+	}
+
+	/** Sets the "source" field to <code>null</code> in all instances.  This will often save memory when
+			the raw data had been placed in that field. */
+	public void removeSources()
+	{
+		for (int i = 0; i < this.size(); i++)
+			get(i).clearSource();
+	}
+
+	/** Constructs a new <code>InstanceList</code>, deserialized from <code>file</code>.  If the
+			string value of <code>file</code> is "-", then deserialize from {@link System.in}. */
+	public static InstanceList load (File file)
+	{
+		try {
+			ObjectInputStream ois;
+			if (file.toString().equals("-"))
+				ois = new ObjectInputStream (System.in);
+			else
+				ois = new ObjectInputStream (new BufferedInputStream(new FileInputStream (file)));
+
+			InstanceList ilist = (InstanceList) ois.readObject();
+			ois.close();
+			return ilist;
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new IllegalArgumentException ("Couldn't read InstanceList from file "+file);
+		}
+	}
+
+	/** Saves this <code>InstanceList</code> to <code>file</code>.
+			If the string value of <code>file</code> is "-", then
+			serialize to {@link System.out}. */
+	public void save (File file)
+	{
+		try {
+			ObjectOutputStream ois;
+			if (file.toString().equals("-"))
+				ois = new ObjectOutputStream (System.out);
+			else
+				ois = new ObjectOutputStream (new FileOutputStream (file));
+			ois.writeObject(this);
+			ois.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new IllegalArgumentException ("Couldn't save InstanceList to file "+file);
+		}
+	}
+
+	// Serialization of InstanceList
+
+	private static final long serialVersionUID = 1;
+	private static final int CURRENT_SERIAL_VERSION = 1;
+
+	private void writeObject (ObjectOutputStream out) throws IOException {
+		int i, size;
+		out.writeInt (CURRENT_SERIAL_VERSION);
+		out.writeObject(instWeights);
+		out.writeObject(pipe);
+	}
+
+	private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
+		int i, size;
+		int version = in.readInt ();
+		instWeights = (HashMap<Instance,Double>) in.readObject();
+		pipe = (Pipe) in.readObject();
+		if (dataAlphabet == null) {
+			if (size()>0) { 
+				Instance instance = get(0); 
+				dataAlphabet = instance.getDataAlphabet (); 
+			}  else if (pipe.getDataAlphabet()!=null) {
+				dataAlphabet = pipe.getDataAlphabet ();
+			}
+		}
+		if (targetAlphabet == null) {
+			if (size()>0) { 
+				Instance instance = get(0); 
+				targetAlphabet = instance.getTargetAlphabet (); 
+			}  else if (pipe.getTargetAlphabet()!=null) {
+				targetAlphabet = pipe.getTargetAlphabet ();
+			}
+		}
+	}
+
+	// added - culotta@cs.umass.edu
+	/**
+		 <code>CrossValidationIterator</code> allows iterating over pairs of
+		 <code>InstanceList</code>, where each pair is split into training/testing
+		 based on nfolds.
+	 */	
+	public class CrossValidationIterator implements java.util.Iterator<InstanceList[]>, Serializable
+	{
+		int nfolds;
+		InstanceList[] folds;
+		int index;
+
+		/**
+			 @param _nfolds number of folds to split InstanceList into
+			 @param seed seed for random number used to split InstanceList
+		 */
+		public CrossValidationIterator (int _nfolds, int seed)
+		{			
+			assert (_nfolds > 0) : "nfolds: " + nfolds;
+			this.nfolds = _nfolds;
+			this.index = 0;
+			folds = new InstanceList[_nfolds];		 
+			double fraction = (double) 1 / _nfolds;
+			double[] proportions = new double[_nfolds];
+			for (int i=0; i < _nfolds; i++) 
+				proportions[i] = fraction;
+			folds = split (new java.util.Random (seed), proportions);
+
+		}
+
+		public CrossValidationIterator (int _nfolds) {
+			this (_nfolds, 1);
+		}
+
+		public boolean hasNext () { return index < nfolds; }
+
+		/**
+		 * Returns the next training/testing split.
+		 * @return A pair of lists, where <code>InstanceList[0]</code> is the larger split (training)
+		 *         and <code>InstanceList[1]</code> is the smaller split (testing)
+		 */
+		public InstanceList[] nextSplit () {
+			InstanceList[] ret = new InstanceList[2];
+			ret[0] = new InstanceList (pipe);
+			for (int i=0; i < folds.length; i++) {
+				if (i==index)
+					continue;
+				Iterator<Instance> iter = folds[i].iterator();
+				while (iter.hasNext()) 
+					ret[0].add (iter.next());									
+			}
+			ret[1] = folds[index].shallowClone();
+			index++;
+			return ret;
+		}
+
+		/** Returns the next split, given the number of folds you want in
+		 *   the training data.  */
+		public InstanceList[] nextSplit (int numTrainFolds) {
+			InstanceList[] ret = new InstanceList[2];
+			ret[0] = new InstanceList (pipe);
+			ret[1] = new InstanceList (pipe);
+
+			// train on folds [index, index+numTrainFolds), test on rest
+			for (int i = 0; i < folds.length; i++) {
+				int foldno = (index + i) % folds.length;
+				InstanceList addTo;
+				if (i < numTrainFolds) {
+					addTo = ret[0];
+				} else {
+					addTo = ret[1];
+				}
+
+				Iterator<Instance> iter = folds[foldno].iterator();
+				while (iter.hasNext()) 
+					addTo.add (iter.next());									
+			}
+			index++;
+			return ret;
+		}
+
+		public InstanceList[] next () { return nextSplit(); }		
+		public void remove () { throw new UnsupportedOperationException(); }
+	}
+
+
+	/** Returns the pipe through which each added <code>Instance</code> is passed,
+	 * which may be <code>null</code>. */
+	public Pipe getPipe ()
+	{
+		return pipe;
+	}
+
+	/** Change the default Pipe associated with InstanceList.
+	 * This method is very dangerous and should only be used in extreme circumstances!! */
+	public void setPipe(Pipe p) {
+		assert (Alphabet.alphabetsMatch(this, p));
+		pipe = p;
+	}
+
+
+	/** Returns the <code>Alphabet</code> mapping features of the data to
+	 * integers. */
+	public Alphabet getDataAlphabet ()
+	{
+		if (dataAlphabet == null && pipe != null) {
+			dataAlphabet = pipe.getDataAlphabet ();
+		}
+		assert (pipe == null
+				|| pipe.getDataAlphabet () == null
+				|| pipe.getDataAlphabet () == dataAlphabet);
+		return dataAlphabet;
+	}
+	
+	/** Returns the <code>Alphabet</code> mapping target output labels to
+	 * integers. */
+	public Alphabet getTargetAlphabet ()
+	{
+		if (targetAlphabet == null && pipe != null) {
+			targetAlphabet = pipe.getTargetAlphabet ();
+		}
+		assert (pipe == null
+				|| pipe.getTargetAlphabet () == null
+				|| pipe.getTargetAlphabet () == targetAlphabet);
+		return targetAlphabet;
+	}
+	
+	public Alphabet getAlphabet () {
+		return getDataAlphabet();
+	}
+	
+	public Alphabet[] getAlphabets () {
+		return new Alphabet[] {getDataAlphabet(), getTargetAlphabet() };
+	}
+	
+	public LabelVector targetLabelDistribution ()
+	{
+		if (this.size() == 0) return null;
+		if (!(get(0).getTarget() instanceof Labeling))
+			throw new IllegalStateException ("Target is not a labeling.");
+		double[] counts = new double[getTargetAlphabet().size()];
+		for (int i = 0; i < this.size(); i++) {
+			Instance instance =  get(i);
+			Labeling l = (Labeling) instance.getTarget();
+			l.addTo (counts, getInstanceWeight(i));
+		}
+		return new LabelVector ((LabelAlphabet)getTargetAlphabet(), counts);
+	}
+
+
+	public CrossValidationIterator crossValidationIterator (int nfolds, int seed)
+	{
+		return new CrossValidationIterator(nfolds, seed);
+	}
+
+	public CrossValidationIterator crossValidationIterator (int nfolds)
+	{
+		return new CrossValidationIterator(nfolds);
+	}
+
+	public static final String TARGET_PROPERTY = "target";
+
+	// I'm not sure these methods best belong here. On the other hand it is easy to find and centrally located here. -AKM Jan 2006
+	public void hideSomeLabels (double proportionToHide, Randoms r)
+	{
+		for (int i = 0; i < this.size(); i++) {
+			if (r.nextBoolean(proportionToHide)) {
+				Instance instance = this.get(i);
+				instance.unLock();
+				if (instance.getProperty(TARGET_PROPERTY) != instance.getTarget())
+					instance.setProperty(TARGET_PROPERTY, instance.getTarget());
+				instance.setTarget (null);
+				instance.lock();
+			}
+		}
+	}
+
+	public void hideSomeLabels (BitSet bs)
+	{
+		for (int i = 0; i < this.size(); i++) {
+			if (bs.get(i)) {
+				Instance instance = this.get(i);
+				instance.unLock();
+				if (instance.getProperty(TARGET_PROPERTY) != instance.getTarget())
+					instance.setProperty(TARGET_PROPERTY, instance.getTarget());
+				instance.setTarget (null);
+				instance.lock();
+			}
+		}
+	}
+
+	public void unhideAllLabels ()
+	{
+		for (int i = 0; i < this.size(); i++) {
+			Instance instance = this.get(i);
+			Object t;
+			if (instance.getTarget() == null && (t=instance.getProperty(TARGET_PROPERTY)) != null) {
+				instance.unLock();
+				instance.setTarget(t);
+				instance.lock();
+			}
+		}
+	}
 
 }
